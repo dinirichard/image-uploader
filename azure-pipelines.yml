@@ -1,0 +1,80 @@
+# FOR SERVERLESS DEPLOYMENT, TO AZURE
+
+
+# Build a Node.js project that uses Angular.
+# Add steps that analyze code, save build artifacts, deploy, and more:
+# https://docs.microsoft.com/azure/devops/pipelines/languages/javascript
+
+trigger:
+- master
+
+variables:
+  # Azure service connection established during pipeline creation
+  azureSubscription:${ resource manager service-connection}
+  appName: ${app service name}
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+parameters:
+- name: backend
+  type: step
+  default:
+    script: |
+      npm install -g @nestjs/cli
+      npm install -g azure-functions-core-tools@3
+      npm install
+      npm run build
+      npm prune --production
+    displayName: 'install nestjs and deploy'
+
+- name: frontend
+  type: step
+  default:
+    script: |
+      cd frontend/
+      sudo npm install -g @angular/cli
+      npm install
+      export CI=1
+      export CLIENT_ID='xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx'
+      export CLIENT_SECRET='xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx'
+      export TENANT_ID='xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx'
+      export AZURE_SUBSCRIPTION_ID='xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx'
+      ng deploy
+    displayName: 'install angular and deploy'
+
+
+jobs: 
+- job: backendJob
+  steps: 
+    - task: NodeTool@0
+      inputs:
+        versionSpec: '10.x'
+      displayName: 'Install Node.js'
+
+    - ${{ parameters.backend }}
+    - task: ArchiveFiles@2
+      inputs:
+        rootFolderOrFile: '$(Build.SourcesDirectory)/dist'
+        includeRootFolder: false
+        archiveType: 'zip'
+        archiveFile: '$(Build.ArtifactStagingDirectory)/$(Build.BuildNumber).zip'
+    - publish: '$(Build.ArtifactStagingDirectory)'
+      artifact: $(appName)
+    - task: PublishBuildArtifacts@1
+      inputs:
+        PathtoPublish: '$(build.artifactstagingdirectory)/'
+        ArtifactName: 'drop'
+        # publishLocation: 'Container'
+# Add this at the end of your file
+    - task: AzureFunctionApp@1 
+      inputs:
+        azureSubscription: $(azureSubscription)
+        appType: functionAppLinux
+        appName: $(appName)
+        package: '$(build.artifactstagingdirectory)/**/*.zip'
+
+- job: frontendJob
+  dependsOn: backendJob
+  steps: 
+    - ${{ parameters.frontend }}
